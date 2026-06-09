@@ -89,26 +89,12 @@ Explique os resultados em linguagem simples. Nunca execute queries de modificaç
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
   }
 
-  async chat(
-    sessionId: string,
-    userId: string,
-    question: string,
-  ): Promise<ChatResponseDto> {
-    await this.sessionService.saveMessage(sessionId, {
-      role: 'user',
-      content: question,
-    });
+  async chat(sessionId: string, userId: string, question: string): Promise<ChatResponseDto> {
+    await this.sessionService.saveMessage(sessionId, { role: 'user', content: question });
 
-    const history = await this.sessionService.getMessagesForAgent(
-      userId,
-      sessionId,
-    );
+    const history = await this.sessionService.getMessagesForAgent(userId, sessionId);
+    const connectionString = await this.connectionService.getDecryptedConnectionString(userId);
 
-    const connectionString =
-      await this.connectionService.getDecryptedConnectionString(userId);
-
-    // All messages except the last (current question) become the chat history.
-    // Gemini uses 'model' where Anthropic used 'assistant'.
     const geminiHistory: Content[] = history.slice(0, -1).map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
@@ -128,31 +114,48 @@ Explique os resultados em linguagem simples. Nunca execute queries de modificaç
 
     let result = await chat.sendMessage(question);
 
-    while (true) {
-      const response = result.response;
-      const functionCalls = response.functionCalls();
+    const MAX_ITERATIONS = 5;
+    let iterations = 0;
 
-      if (!functionCalls || functionCalls.length === 0) {
-        finalText = response.text();
+    while (iterations < MAX_ITERATIONS) {
+      iterations++;
+      const response = result.response;
+      const candidate = response.candidates?.[0];
+
+
+      const finishReason = candidate?.finishReason;
+      const functionCalls = response.functionCalls?.() ?? [];
+
+      if (functionCalls.length === 0) {
+        try {
+          finalText = response.text();
+        } catch {
+          finalText = candidate?.content?.parts?.map((p) => ('text' in p ? p.text : '')).join('') ?? '';
+        }
         break;
       }
+
+      if (finishReason === 'STOP' && functionCalls.length === 0) break;
 
       const functionResponseParts: Part[] = [];
 
       for (const fc of functionCalls) {
         let output: string;
-
-        if (fc.name === 'get_schema') {
-          output = await this.getSchema(connectionString);
-        } else if (fc.name === 'execute_query') {
-          const input = fc.args as { sql: string };
-          capturedSql = input.sql;
-          output = await this.executeQuery(connectionString, input.sql);
-        } else if (fc.name === 'generate_chart') {
-          capturedChartConfig = fc.args as object;
-          output = JSON.stringify({ success: true });
-        } else {
-          output = JSON.stringify({ error: 'Tool desconhecida' });
+        try {
+          if (fc.name === 'get_schema') {
+            output = await this.getSchema(connectionString);
+          } else if (fc.name === 'execute_query') {
+            const input = fc.args as { sql: string };
+            capturedSql = input.sql;
+            output = await this.executeQuery(connectionString, input.sql);
+          } else if (fc.name === 'generate_chart') {
+            capturedChartConfig = fc.args as object;
+            output = JSON.stringify({ success: true });
+          } else {
+            output = JSON.stringify({ error: 'Tool desconhecida' });
+          }
+        } catch (err) {
+          output = JSON.stringify({ error: err instanceof Error ? err.message : 'Erro ao executar tool' });
         }
 
         let responseObj: object;
@@ -170,6 +173,10 @@ Explique os resultados em linguagem simples. Nunca execute queries de modificaç
       result = await chat.sendMessage(functionResponseParts);
     }
 
+    if (!finalText) {
+      finalText = 'Não foi possível gerar uma resposta. Tente novamente.';
+    }
+
     const saved = await this.sessionService.saveMessage(sessionId, {
       role: 'assistant',
       content: finalText,
@@ -180,52 +187,52 @@ Explique os resultados em linguagem simples. Nunca execute queries de modificaç
     return this.sessionService.toMessageResponse(saved);
   }
 
-  private async getSchema(connectionString: string): Promise<string> {
-    const ds = new DataSource({
-      type: 'postgres',
-      url: connectionString,
-      ssl: { rejectUnauthorized: false },
-      connectTimeoutMS: 5000,
-    });
-    try {
-      await ds.initialize();
-      const rows = await ds.query(`
-        SELECT table_name, column_name, data_type
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        ORDER BY table_name, column_name
-      `);
-      return JSON.stringify(rows);
-    } finally {
-      if (ds.isInitialized) await ds.destroy();
-    }
-  }
-
-  private async executeQuery(
-    connectionString: string,
-    sql: string,
-  ): Promise<string> {
-    const forbidden =
-      /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|EXEC)\b/i;
-    if (forbidden.test(sql) || !/^\s*SELECT/i.test(sql)) {
-      throw new BadRequestException('Apenas queries SELECT são permitidas.');
+    private async getSchema(connectionString: string): Promise<string> {
+      const ds = new DataSource({
+        type: 'postgres',
+        url: connectionString,
+        ssl: { rejectUnauthorized: false },
+        connectTimeoutMS: 5000,
+      });
+      try {
+        await ds.initialize();
+        const rows = await ds.query(`
+          SELECT table_name, column_name, data_type
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+          ORDER BY table_name, column_name
+        `);
+        return JSON.stringify(rows);
+      } finally {
+        if (ds.isInitialized) await ds.destroy();
+      }
     }
 
-    const ds = new DataSource({
-      type: 'postgres',
-      url: connectionString,
-      ssl: { rejectUnauthorized: false },
-      connectTimeoutMS: 5000,
-    });
-    try {
-      await ds.initialize();
-      const clean = sql.trim().replace(/;+$/, '');
-      const rows = await ds.query(
-        `SELECT * FROM (\n${clean}\n) AS _q LIMIT 500`,
-      );
-      return JSON.stringify(rows);
-    } finally {
-      if (ds.isInitialized) await ds.destroy();
+    private async executeQuery(
+      connectionString: string,
+      sql: string,
+    ): Promise<string> {
+      const forbidden =
+        /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|EXEC)\b/i;
+      if (forbidden.test(sql) || !/^\s*SELECT/i.test(sql)) {
+        throw new BadRequestException('Apenas queries SELECT são permitidas.');
+      }
+
+      const ds = new DataSource({
+        type: 'postgres',
+        url: connectionString,
+        ssl: { rejectUnauthorized: false },
+        connectTimeoutMS: 5000,
+      });
+      try {
+        await ds.initialize();
+        const clean = sql.trim().replace(/;+$/, '');
+        const rows = await ds.query(
+          `SELECT * FROM (\n${clean}\n) AS _q LIMIT 500`,
+        );
+        return JSON.stringify(rows);
+      } finally {
+        if (ds.isInitialized) await ds.destroy();
+      }
     }
-  }
 }
