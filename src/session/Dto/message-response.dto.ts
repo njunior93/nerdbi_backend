@@ -4,5 +4,6 @@ export class MessageResponseDto {
   content: string;
   sql: string | null;
   chartConfig: object | null;
+  isRateLimited: boolean;
   createdAt: Date;
 }

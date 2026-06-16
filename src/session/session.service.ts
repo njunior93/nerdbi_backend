@@ -74,6 +74,7 @@ export class SessionService {
       content: string;
       sql?: string;
       chartConfig?: object;
+      isRateLimited?: boolean;
     },
   ): Promise<Message> {
     const message = new Message();
@@ -82,6 +83,7 @@ export class SessionService {
     message.content = data.content;
     if (data.sql !== undefined) message.sql = data.sql;
     if (data.chartConfig !== undefined) message.chartConfig = data.chartConfig;
+    if (data.isRateLimited !== undefined) message.isRateLimited = data.isRateLimited;
     return (await this.messageRepository.save(message)) as Message;
   }
 
@@ -113,6 +115,7 @@ export class SessionService {
       content: message.content,
       sql: message.sql ?? null,
       chartConfig: message.chartConfig ?? null,
+      isRateLimited: message.isRateLimited ?? false,
       createdAt: message.createdAt,
     };
   }

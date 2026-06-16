@@ -18,6 +18,9 @@ export class Message {
   @Column({ nullable: true, type: 'jsonb' })
   chartConfig: object
 
+  @Column({ type: 'boolean', nullable: true, default: false })
+  isRateLimited: boolean
+
   @CreateDateColumn()
   createdAt: Date
 

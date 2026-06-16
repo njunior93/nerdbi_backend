@@ -105,6 +105,7 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
 
     let finalText = '';
     let capturedSql: string | undefined;
+    let isRateLimited = false;
 
     for (let i = 0; i < this.MAX_ITERATIONS; i++) {
       let completion: Awaited<ReturnType<typeof this.groq.chat.completions.create>>;
@@ -118,7 +119,14 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
         });
       } catch (err) {
         console.error('[AgentService] Erro na chamada principal à Groq:', err);
-        // Primeira tentativa falhou — retry imediato único
+        // Rate limit na chamada principal: inútil fazer retry imediato (limite diário de tokens)
+        if (err instanceof Groq.RateLimitError) {
+          isRateLimited = true;
+          finalText =
+            'O limite de uso da IA foi atingido. Aguarde alguns minutos e tente novamente.';
+          break;
+        }
+        // Demais erros: retry imediato único
         try {
           completion = await this.groq.chat.completions.create({
             model: MODEL,
@@ -127,10 +135,16 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
             tool_choice: 'auto',
             temperature: 0,
           });
-        } catch (err) {
-          console.error('[AgentService] Erro no retry à Groq:', err);
-          finalText =
-            'Não consegui processar essa solicitação. Tente reformular a pergunta de outra forma.';
+        } catch (retryErr) {
+          console.error('[AgentService] Erro no retry à Groq:', retryErr);
+          if (retryErr instanceof Groq.RateLimitError) {
+            isRateLimited = true;
+            finalText =
+              'O limite de uso da IA foi atingido. Aguarde alguns minutos e tente novamente.';
+          } else {
+            finalText =
+              'Não consegui processar essa solicitação. Tente reformular a pergunta de outra forma.';
+          }
           break;
         }
       }
@@ -188,6 +202,7 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
       role: 'assistant',
       content: finalText,
       sql: capturedSql,
+      isRateLimited,
     });
 
     return this.sessionService.toMessageResponse(saved);
