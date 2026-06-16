@@ -1,4 +1,4 @@
-# 💬 NerdBI — Frontend
+# 💬 NerdBI — Backend
 
 Este projeto foi criado com foco em construir um SaaS real de análise de dados com linguagem natural.
 
