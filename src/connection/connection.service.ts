@@ -69,7 +69,27 @@ export class ConnectionService {
     return this.decrypt(user.connectionString);
   }
 
+  private requireTransactionPoolingPort(connectionString: string): void {
+    try {
+      const url = new URL(connectionString);
+      const port = url.port || '5432';
+      if (port !== '6543') {
+        throw new BadRequestException(
+          'Use a connection string com connection pooling em modo transaction (porta 6543). ' +
+            'Conexões diretas ao banco não são suportadas.',
+        );
+      }
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException(
+        'Connection string inválida. Verifique o formato e tente novamente.',
+      );
+    }
+  }
+
   private async verifyConnection(connectionString: string): Promise<void> {
+    this.requireTransactionPoolingPort(connectionString);
+
     const dataSource = new DataSource({
       type: 'postgres',
       url: connectionString,
