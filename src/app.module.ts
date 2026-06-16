@@ -30,7 +30,7 @@ import { UserThrottlerGuard } from './common/Guard/user-throttler.guard';
         family: 4,
       },
       autoLoadEntities: true,
-      synchronize: true,
+      synchronize: false,
     }),
     AuthModule,
     ConnectionModule,
