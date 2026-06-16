@@ -7,8 +7,8 @@ async function bootstrap() {
 
   app.enableCors({
   origin: [
-      process.env.JWT_TOKEN_ISSUER,
-      process.env.JWT_TOKEN_AUDIENCE
+      process.env.FRONTEND_URL,
+      'http://localhost:5173',
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE, OPTIONS',
   allowedHeaders: ['Content-Type', 'Authorization'],
