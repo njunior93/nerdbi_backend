@@ -218,6 +218,9 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
       return [...grouped.entries()]
         .map(([table, cols]) => `${table}(${cols.join(', ')})`)
         .join('\n');
+    } catch (err) {
+      console.error('[AgentService] Erro em getSchema:', err);
+      throw err;
     } finally {
       if (ds.isInitialized) await ds.destroy();
     }
@@ -240,6 +243,9 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
       const clean = sql.trim().replace(/;+$/, '');
       const rows = await ds.query(`SELECT * FROM (\n${clean}\n) AS _q LIMIT 500`);
       return JSON.stringify(rows);
+    } catch (err) {
+      console.error('[AgentService] Erro em executeQuery:', err);
+      throw err;
     } finally {
       if (ds.isInitialized) await ds.destroy();
     }
