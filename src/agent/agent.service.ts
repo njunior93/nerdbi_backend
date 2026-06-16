@@ -198,7 +198,7 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
       type: 'postgres',
       url: connectionString,
       ssl: { rejectUnauthorized: false },
-      connectTimeoutMS: 5000,
+      extra: { family: 4, connectionTimeoutMillis: 5000 },
     });
     try {
       await ds.initialize();
@@ -236,7 +236,7 @@ Ao decidir utilizar qualquer ferramenta (como 'execute_query'), você NÃO deve 
       type: 'postgres',
       url: connectionString,
       ssl: { rejectUnauthorized: false },
-      connectTimeoutMS: 5000,
+      extra: { family: 4, connectionTimeoutMillis: 5000 },
     });
     try {
       await ds.initialize();
