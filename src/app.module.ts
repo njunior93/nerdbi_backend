@@ -26,6 +26,9 @@ import { UserThrottlerGuard } from './common/Guard/user-throttler.guard';
       ssl: {
         rejectUnauthorized: false,
       },
+      extra: {
+        family: 4,
+      },
       autoLoadEntities: true,
       synchronize: true,
     }),
